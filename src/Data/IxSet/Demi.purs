@@ -12,6 +12,10 @@ import Data.Foldable (class Foldable, foldMap, foldr, foldl)
 import Data.Traversable (class Traversable, traverse, sequence)
 import Data.Generic.Rep (class Generic)
 import Data.Array (snoc, toUnfoldable) as Array
+import Data.Argonaut (class EncodeJson, class DecodeJson, (:=), (~>), jsonEmptyObject, (.:), encodeJson, decodeJson)
+import Data.ArrayBuffer.Class
+  ( class DynamicByteLength, class EncodeArrayBuffer, class DecodeArrayBuffer
+  , byteLength, putArrayBuffer, readArrayBuffer)
 import Partial.Unsafe (unsafePartial)
 
 
@@ -39,6 +43,36 @@ instance foldableIxDemiSet :: Foldable (IxDemiSet k) where
 instance traversableIxDemiSet :: Traversable (IxDemiSet k) where
   traverse f (IxDemiSet x) = (\mapping -> IxDemiSet x {mapping = mapping}) <$> traverse f x.mapping
   sequence (IxDemiSet x) = (\mapping -> IxDemiSet x {mapping = mapping}) <$> sequence x.mapping
+instance encodeJsonIxDemiSet :: (EncodeJson k, EncodeJson a) => EncodeJson (IxDemiSet k a) where
+  encodeJson set =
+    let xs :: Array _
+        xs = toUnfoldable' set
+    in  encodeJson $ map (\(Tuple k x) -> "key" := k ~> "value" := x ~> jsonEmptyObject) xs
+instance decodeJsonIxDemiSet :: (DecodeJson k, DecodeJson a, Ord k) => DecodeJson (IxDemiSet k a) where
+  decodeJson json = do
+    (xs :: Array (Tuple k a)) <- decodeJson json >>= \xs' ->
+      traverse (\o -> Tuple <$> o .: "key" <*> o .: "value") xs'
+    let {set} = fromFoldable xs
+    pure set
+instance dynamicByteLengthIxDemiSet :: (DynamicByteLength k, DynamicByteLength a) => DynamicByteLength (IxDemiSet k a) where
+  byteLength set =
+    let xs :: Array _
+        xs = toUnfoldable' set
+    in  byteLength xs
+instance encodeArrayBufferIxDemiSet :: (EncodeArrayBuffer k, EncodeArrayBuffer a) => EncodeArrayBuffer (IxDemiSet k a) where
+  putArrayBuffer b o set =
+    let xs :: Array _
+        xs = toUnfoldable' set
+    in  putArrayBuffer b o xs
+instance decodeArrayBufferIxDemiSet :: ( DynamicByteLength k, DynamicByteLength a
+                                       , DecodeArrayBuffer k, DecodeArrayBuffer a, Ord k) => DecodeArrayBuffer (IxDemiSet k a) where
+  readArrayBuffer b o = do
+    (mxs :: Maybe (Array _)) <- readArrayBuffer b o
+    case mxs of
+      Nothing -> pure Nothing
+      Just xs ->
+        let {set} = fromFoldable xs
+        in  pure (Just set)
 
 
 
