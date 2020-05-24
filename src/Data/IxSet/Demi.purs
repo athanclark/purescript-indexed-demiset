@@ -1,14 +1,18 @@
 module Data.IxSet.Demi where
 
 import Prelude
-import Data.Maybe (Maybe (..))
+import Data.Maybe (Maybe (..), fromJust)
+import Data.Tuple (Tuple (..))
 import Data.Map (Map)
-import Data.Map (lookup, empty, insert) as Map
+import Data.Map (lookup, empty, insert, toUnfoldable, fromFoldable, delete) as Map
 import Data.IntMap (IntMap)
-import Data.IntMap (insert, lookup, empty) as IntMap
+import Data.IntMap (insert, lookup, empty, filter, toUnfoldable, delete) as IntMap
+import Data.Unfoldable (class Unfoldable)
 import Data.Foldable (class Foldable, foldMap, foldr, foldl)
 import Data.Traversable (class Traversable, traverse, sequence)
 import Data.Generic.Rep (class Generic)
+import Data.Array (snoc, toUnfoldable) as Array
+import Partial.Unsafe (unsafePartial)
 
 
 
@@ -61,18 +65,52 @@ insert k x (IxDemiSet set) =
   , index: set.nextIndex
   }
 
--- deleteKey :: k -> IxDemiSet k a -> IxDemiSet k a
+deleteKey :: forall k a. Ord k => k -> IxDemiSet k a -> IxDemiSet k a
+deleteKey k (IxDemiSet x) = IxDemiSet
+  { mapping: Map.delete k x.mapping
+  , keyMapping: IntMap.filter (_ /= k) x.keyMapping
+  , nextIndex: x.nextIndex
+  }
 
--- delete :: Index -> IxDemiSet k a -> IxDemiSet k a
+delete :: forall k a. Ord k => Index -> IxDemiSet k a -> IxDemiSet k a
+delete i set@(IxDemiSet x) = case IntMap.lookup i x.keyMapping of
+  Nothing -> set
+  Just k -> deleteKey k (IxDemiSet x {keyMapping = IntMap.delete i x.keyMapping})
 
--- toUnfoldable' :: IxDemiSet k a -> f (Tuple k a)
+toUnfoldable' :: forall f k a. Unfoldable f => IxDemiSet k a -> f (Tuple k a)
+toUnfoldable' (IxDemiSet {mapping}) = Map.toUnfoldable mapping
 
--- toUnfoldable :: IxDemiSet k a -> f {index :: Index, key :: k, value :: a}
+toUnfoldable :: forall f k a. Unfoldable f => Ord k => IxDemiSet k a -> f {index :: Index, key :: k, value :: a}
+toUnfoldable (IxDemiSet {mapping,keyMapping}) =
+  let is :: Array (Tuple Index k)
+      is = IntMap.toUnfoldable keyMapping
+  in  Array.toUnfoldable $
+        map (\(Tuple i k) ->
+              { value: unsafePartial (fromJust (Map.lookup k mapping))
+              , key: k
+              , index: i
+              }) is
 
--- fromFoldable :: f (Tuple k a) -> {set :: IxDemiSet k a, indicides :: Array Index}
+fromFoldable :: forall f k a. Foldable f => Ord k => f (Tuple k a) -> {set :: IxDemiSet k a, indicies :: Array Index}
+fromFoldable xs =
+  let go (Tuple k x) {set,indicies} =
+        let {set: set',index} = insert k x set
+        in  {set: set', indicies: Array.snoc indicies index}
+  in  foldr go {set: empty, indicies: []} xs
 
--- mapKeys :: Ord k' => (k -> k') -> IxDemiSet k a -> IxDemiSet k' a
+mapKeys :: forall k k' a. Ord k' => (k -> k') -> IxDemiSet k a -> IxDemiSet k' a
+mapKeys f (IxDemiSet x) = IxDemiSet x {mapping = mapping', keyMapping = map f x.keyMapping}
+  where
+    mapping' =
+      let xs :: Array _
+          xs = Map.toUnfoldable x.mapping
+      in  Map.fromFoldable (map (\(Tuple k y) -> Tuple (f k) y) xs)
 
--- eqExact :: IxDemiSet k a -> IxDemiSet k a -> Boolean
+eqExact :: forall k a. Eq k => Eq a => IxDemiSet k a -> IxDemiSet k a -> Boolean
+eqExact (IxDemiSet x) (IxDemiSet y) = x.mapping == y.mapping && x.keyMapping == y.keyMapping && x.nextIndex == y.nextIndex
 
--- showExact :: IxDemiSet k a -> String
+showExact :: forall k a. Show k => Show a => Ord k => IxDemiSet k a -> String
+showExact set =
+  let xs :: Array _
+      xs = toUnfoldable set
+  in  show xs
