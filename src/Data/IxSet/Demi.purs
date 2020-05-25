@@ -4,7 +4,7 @@ import Prelude
 import Data.Maybe (Maybe (..), fromJust)
 import Data.Tuple (Tuple (..))
 import Data.Map (Map)
-import Data.Map (lookup, empty, insert, toUnfoldable, fromFoldable, delete) as Map
+import Data.Map (lookup, empty, insert, toUnfoldable, fromFoldable, delete, size) as Map
 import Data.IntMap (IntMap)
 import Data.IntMap (insert, lookup, empty, filter, toUnfoldable, delete) as IntMap
 import Data.Unfoldable (class Unfoldable)
@@ -148,3 +148,7 @@ showExact set =
   let xs :: Array _
       xs = toUnfoldable set
   in  show xs
+
+
+size :: forall k a. IxDemiSet k a -> Int
+size (IxDemiSet {mapping}) = Map.size mapping
