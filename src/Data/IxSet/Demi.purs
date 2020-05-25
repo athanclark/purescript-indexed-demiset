@@ -9,6 +9,7 @@ import Data.IntMap (IntMap)
 import Data.IntMap (insert, lookup, empty, filter, toUnfoldable, delete, insertWith, values) as IntMap
 import Data.Unfoldable (class Unfoldable)
 import Data.Foldable (class Foldable, foldMap, foldr, foldl)
+import Data.FoldableWithIndex (foldrWithIndex)
 import Data.Traversable (class Traversable, traverse, sequence)
 import Data.Generic.Rep (class Generic)
 import Data.Array (snoc, toUnfoldable) as Array
@@ -203,3 +204,22 @@ zipWith f (IxDemiSet x) (IxDemiSet y) = IxDemiSet
       , keyMapping: IntMap.filter (flip Map.member mapping) (map (_.key) resultValues)
       , nextIndex: y.nextIndex
       }
+
+
+-- | Uses the second parameter as the set's state, but transitions from the first to the second when already existing
+intoFrom :: forall k a a'
+          . Ord k
+         => (a -> a' -> a)
+         -> (a' -> a)
+         -> IxDemiSet k a
+         -> IxDemiSet k a'
+         -> IxDemiSet k a
+intoFrom with from (IxDemiSet x) (IxDemiSet y) = IxDemiSet
+  { mapping:
+    let go k a' acc = case Map.lookup k x.mapping of
+          Nothing -> Map.insert k (from a') acc
+          Just a  -> Map.insert k (with a a') acc
+    in  foldrWithIndex go Map.empty y.mapping
+  , keyMapping: y.keyMapping
+  , nextIndex: y.nextIndex
+  }
