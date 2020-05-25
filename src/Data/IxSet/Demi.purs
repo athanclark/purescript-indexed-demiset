@@ -6,12 +6,13 @@ import Data.Tuple (Tuple (..))
 import Data.Map (Map)
 import Data.Map (lookup, empty, insert, toUnfoldable, fromFoldable, delete, size) as Map
 import Data.IntMap (IntMap)
-import Data.IntMap (insert, lookup, empty, filter, toUnfoldable, delete) as IntMap
+import Data.IntMap (insert, lookup, empty, filter, toUnfoldable, delete, insertWith, values) as IntMap
 import Data.Unfoldable (class Unfoldable)
 import Data.Foldable (class Foldable, foldMap, foldr, foldl)
 import Data.Traversable (class Traversable, traverse, sequence)
 import Data.Generic.Rep (class Generic)
 import Data.Array (snoc, toUnfoldable) as Array
+import Data.FunctorWithIndex (mapWithIndex)
 import Data.Argonaut (class EncodeJson, class DecodeJson, (:=), (~>), jsonEmptyObject, (.:), encodeJson, decodeJson)
 import Data.ArrayBuffer.Class
   ( class DynamicByteLength, class EncodeArrayBuffer, class DecodeArrayBuffer
@@ -152,3 +153,52 @@ showExact set =
 
 size :: forall k a. IxDemiSet k a -> Int
 size (IxDemiSet {mapping}) = Map.size mapping
+
+
+-- | Preserves the common indicies
+zipWith :: forall k k' k'' a a' a''
+         . Ord k => Ord k' => Ord k''
+        => (Index -> k -> k' -> a -> a' -> {key :: k'', value :: a''})
+        -> IxDemiSet k a
+        -> IxDemiSet k' a'
+        -> IxDemiSet k'' a''
+zipWith f (IxDemiSet x) (IxDemiSet y) = IxDemiSet
+  let keyMappings :: IntMap (Tuple k k')
+      keyMappings =
+        let ks :: Array (Tuple Index k)
+            ks = IntMap.toUnfoldable x.keyMapping
+            ks' :: Array (Tuple Index k')
+            ks' = IntMap.toUnfoldable y.keyMapping
+            goKs :: Tuple Index k -> _
+            goKs (Tuple i k) acc = IntMap.insert i (Tuple (Just k) Nothing) acc
+            afterKs = foldr goKs IntMap.empty ks
+            goKs' :: Tuple Index k' -> _
+            goKs' (Tuple i k) acc = IntMap.insertWith i (\(Tuple k1 _) -> Tuple k1 (Just k)) (Tuple Nothing (Just k)) acc
+            afterKs' = foldr goKs' afterKs ks'
+            filterOutNone =
+              let hasBoth (Tuple (Just _) (Just _)) = true
+                  hasBoth _ = false
+              in  IntMap.filter hasBoth afterKs'
+            fromBoth t = unsafePartial $ case t of
+              Tuple (Just a) (Just b) -> Tuple a b
+        in  map fromBoth filterOutNone
+      allValues :: IntMap {k :: k, k' :: k', a :: a, a' :: a'}
+      allValues =
+        let go (Tuple k k') =
+              { k
+              , k'
+              , a: unsafePartial $ fromJust $ Map.lookup k x.mapping
+              , a': unsafePartial $ fromJust $ Map.lookup k' y.mapping
+              }
+        in  map go keyMappings
+      resultValues :: IntMap {key :: k'', value :: a''}
+      resultValues =
+        let go i {k,k',a,a'} = f i k k' a a'
+        in  mapWithIndex go allValues
+  in  { mapping:
+        let go {key,value} = Tuple key value
+            xs = map go (IntMap.values resultValues)
+        in  Map.fromFoldable xs
+      , keyMapping: map (_.key) resultValues
+      , nextIndex: y.nextIndex
+      }
