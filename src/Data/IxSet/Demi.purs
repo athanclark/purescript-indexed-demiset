@@ -4,7 +4,7 @@ import Prelude
 import Data.Maybe (Maybe (..), fromJust)
 import Data.Tuple (Tuple (..))
 import Data.Map (Map)
-import Data.Map (lookup, empty, insert, toUnfoldable, fromFoldable, delete, size) as Map
+import Data.Map (lookup, empty, insert, toUnfoldable, fromFoldable, delete, size, member) as Map
 import Data.IntMap (IntMap)
 import Data.IntMap (insert, lookup, empty, filter, toUnfoldable, delete, insertWith, values) as IntMap
 import Data.Unfoldable (class Unfoldable)
@@ -155,7 +155,7 @@ size :: forall k a. IxDemiSet k a -> Int
 size (IxDemiSet {mapping}) = Map.size mapping
 
 
--- | Preserves the common indicies
+-- | Preserves the common indicies, but prefers the right set.
 zipWith :: forall k k' k'' a a' a''
          . Ord k => Ord k' => Ord k''
         => (Index -> k -> k' -> a -> a' -> {key :: k'', value :: a''})
@@ -195,10 +195,11 @@ zipWith f (IxDemiSet x) (IxDemiSet y) = IxDemiSet
       resultValues =
         let go i {k,k',a,a'} = f i k k' a a'
         in  mapWithIndex go allValues
-  in  { mapping:
+      mapping =
         let go {key,value} = Tuple key value
             xs = map go (IntMap.values resultValues)
         in  Map.fromFoldable xs
-      , keyMapping: map (_.key) resultValues
+  in  { mapping
+      , keyMapping: IntMap.filter (flip Map.member mapping) (map (_.key) resultValues)
       , nextIndex: y.nextIndex
       }
