@@ -101,6 +101,11 @@ insert k x (IxDemiSet set) =
   , index: set.nextIndex
   }
 
+updateValue :: forall k a. Ord k => Index -> a -> IxDemiSet k a -> IxDemiSet k a
+updateValue i x orig@(IxDemiSet y) = case IntMap.lookup i y.keyMapping of
+  Nothing -> orig
+  Just k -> IxDemiSet y {mapping = Map.insert k x y.mapping}
+
 deleteKey :: forall k a. Ord k => k -> IxDemiSet k a -> IxDemiSet k a
 deleteKey k (IxDemiSet x) = IxDemiSet
   { mapping: Map.delete k x.mapping
